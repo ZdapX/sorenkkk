@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CEO Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <a href="/" style="color: white; text-decoration: none;">← Home</a>
+            <h1>CEO Dashboard 🔐</h1>
+        </header>
+
+        <div class="card">
+            <h3>Tambah API Key OpenRouter</h3>
+            <form action="/ceo/add-key" method="POST" style="margin-top: 15px;">
+                <input type="text" name="key" placeholder="sk-or-v1-..." required>
+                <button type="submit" class="btn">Simpan Key</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>Active Keys</h3>
+            <% if(keys.length > 0) { %>
+                <ul style="list-style: none; padding: 0;">
+                    <% keys.forEach((k, index) => { %>
+                        <li style="padding: 10px; border-bottom: 1px solid #334155; color: #94a3b8; font-family: monospace;">
+                            Key #<%= index + 1 %>: <%= k.key.substring(0, 10) %>...
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } else { %>
+                <p>Belum ada key tersimpan.</p>
+            <% } %>
+        </div>
+    </div>
+</body>
+</html>
