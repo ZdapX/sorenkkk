@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat dengan <%= ai.name %></title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container chat-container">
+        <!-- Header Chat -->
+        <div class="chat-header">
+            <a href="/" style="color: #94a3b8; text-decoration: none; margin-right: 10px;">❮</a>
+            <img src="<%= ai.image %>" class="ai-avatar-small" style="width: 40px; height: 40px; margin-bottom: 0;">
+            <div>
+                <div class="ai-name"><%= ai.name %></div>
+                <div style="font-size: 0.7rem; color: #4ade80;">● Online</div>
+            </div>
+        </div>
+
+        <!-- Area Pesan -->
+        <div class="chat-messages" id="chatBox">
+            <!-- Pesan akan muncul disini -->
+            <div class="message msg-ai">Halo! Saya <%= ai.name %>. Ada yang bisa saya bantu?</div>
+        </div>
+
+        <!-- Input -->
+        <div class="chat-input-area">
+            <input type="text" id="msgInput" placeholder="Ketik pesan..." onkeypress="handleEnter(event)">
+            <button class="btn" style="width: auto;" onclick="sendMessage()">➤</button>
+        </div>
+    </div>
+
+    <script>
+        const aiId = "<%= ai._id %>";
+        // Membuat session ID sederhana agar chat tidak tercampur antar user lain di browser berbeda
+        let sessionId = localStorage.getItem('chatSession_' + aiId);
+        if (!sessionId) {
+            sessionId = Math.random().toString(36).substring(7);
+            localStorage.setItem('chatSession_' + aiId, sessionId);
+        }
+
+        const chatBox = document.getElementById('chatBox');
+
+        // Load History (Opsional, jika ingin chat tersimpan saat refresh)
+        async function loadHistory() {
+            // Implementasi fetch history bisa ditambahkan disini memanggil endpoint /api/chat-history
+        }
+
+        function appendMessage(role, text) {
+            const div = document.createElement('div');
+            div.className = `message ${role === 'user' ? 'msg-user' : 'msg-ai'}`;
+            div.innerText = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function handleEnter(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('msgInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            // 1. Tampilkan pesan user
+            appendMessage('user', text);
+            input.value = '';
+
+            // 2. Tampilkan loading sementara
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message msg-ai';
+            loadingDiv.id = 'loading-bubble';
+            loadingDiv.innerText = '...';
+            chatBox.appendChild(loadingDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                // 3. Kirim ke Backend
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        aiId: aiId,
+                        message: text,
+                        sessionId: sessionId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // Hapus loading
+                document.getElementById('loading-bubble').remove();
+
+                if (data.reply) {
+                    appendMessage('ai', data.reply);
+                } else {
+                    appendMessage('ai', "Maaf, terjadi kesalahan pada server.");
+                }
+
+            } catch (err) {
+                document.getElementById('loading-bubble').remove();
+                appendMessage('ai', "Gagal terhubung ke server.");
+            }
+        }
+    </script>
+</body>
+</html>
