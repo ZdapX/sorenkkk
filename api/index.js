@@ -8,13 +8,10 @@ const cors = require('cors');
 const app = express();
 
 // --- CONFIG ---
+// Pastikan URI MongoDB benar
 const uri = "mongodb+srv://dafanation999_db_user:UXeB3cb4ow5b9Nr9@cluster0.bn6kvnj.mongodb.net/?appName=Cluster0";
 
-// JANGAN PAKAI KEY LAMA YANG ERROR. 
-// Biarkan kosong dulu, nanti isi lewat menu CEO setelah deploy.
-const DEFAULT_API_KEY = ""; 
-
-// Middleware
+// --- MIDDLEWARE ---
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '../views'));
 app.use(express.static(path.join(__dirname, '../public')));
@@ -28,18 +25,24 @@ let db;
 
 async function connectDB() {
     if (db) return db;
-    if (!client) {
-        client = new MongoClient(uri, {
-            serverApi: {
-                version: ServerApiVersion.v1,
-                strict: true,
-                deprecationErrors: true,
-            }
-        });
-        await client.connect();
+    try {
+        if (!client) {
+            client = new MongoClient(uri, {
+                serverApi: {
+                    version: ServerApiVersion.v1,
+                    strict: true,
+                    deprecationErrors: true,
+                }
+            });
+            await client.connect();
+            console.log("Database connected!");
+        }
+        db = client.db("ai_share_platform");
+        return db;
+    } catch (err) {
+        console.error("Database Connection Failed:", err);
+        throw err;
     }
-    db = client.db("ai_share_platform");
-    return db;
 }
 
 // --- ROUTES ---
@@ -48,9 +51,9 @@ async function connectDB() {
 app.get('/', async (req, res) => {
     try {
         const database = await connectDB();
-        const ais = await database.collection("ais").find().sort({ _id: -1 }).toArray();
+        const ais = await database.collection("ais").find().sort({ createdAt: -1 }).toArray();
         res.render('index', { ais: ais });
-    } catch (e) { res.send("Error loading DB"); }
+    } catch (e) { res.status(500).send("DB Error: " + e.message); }
 });
 
 // 2. CREATE AI PAGE
@@ -82,7 +85,6 @@ app.post('/api/create-ai', async (req, res) => {
 app.get('/chat/:id', async (req, res) => {
     try {
         const database = await connectDB();
-        // Validasi ID sebelum query
         if (!ObjectId.isValid(req.params.id)) return res.send("Invalid AI ID");
         
         const ai = await database.collection("ais").findOne({ _id: new ObjectId(req.params.id) });
@@ -94,61 +96,71 @@ app.get('/chat/:id', async (req, res) => {
     }
 });
 
-// 5. API: SEND MESSAGE (OpenRouter)
+// 5. API: SEND MESSAGE (CORE FEATURE)
 app.post('/api/chat', async (req, res) => {
     const { aiId, message, sessionId } = req.body;
     
+    // 1. Validasi Input Dasar
+    if (!aiId || !message) {
+        return res.status(400).json({ reply: "Data tidak lengkap (AI ID atau pesan hilang)." });
+    }
+
     try {
         const database = await connectDB();
         
-        // Ambil Data AI
+        // 2. Ambil Data AI
         const ai = await database.collection("ais").findOne({ _id: new ObjectId(aiId) });
-        if (!ai) return res.status(404).json({ error: "AI not found" });
+        if (!ai) return res.status(404).json({ error: "AI not found in DB" });
 
-        // AMBIL API KEY DARI DATABASE
-        const keys = await database.collection("apikeys").find({}).toArray();
-        
-        // Cek apakah ada key tersedia
-        if (keys.length === 0) {
-            return res.status(500).json({ reply: "Maaf, CEO belum memasukkan API Key yang valid." });
+        // 3. Ambil API Key (Pastikan ada)
+        const keyData = await database.collection("apikeys").findOne({ active: true });
+        if (!keyData || !keyData.key) {
+            console.error("No API Key found in Database");
+            return res.status(500).json({ reply: "Sistem Error: CEO belum mengisi API Key." });
         }
+        const apiKey = keyData.key;
 
-        // Pilih random key
-        const randomKeyObj = keys[Math.floor(Math.random() * keys.length)];
-        const apiKey = randomKeyObj.key;
-
-        // Ambil History Chat
+        // 4. Ambil History Chat
         let chatSession = await database.collection("chats").findOne({ aiId: aiId, sessionId: sessionId });
         let messages = chatSession ? chatSession.messages : [];
 
         // Tambah pesan user
         messages.push({ role: "user", content: message });
 
-        // Payload OpenRouter
-        const systemMessage = { role: "system", content: ai.description };
-        // Batasi history agar token tidak jebol (ambil 10 pesan terakhir)
-        const recentMessages = messages.slice(-10); 
+        // 5. Siapkan Payload OpenRouter
+        // Kita ganti model ke yang lebih stabil (Google Gemma 2 atau Llama 3 Free)
+        const MODEL_ID = "google/gemma-2-9b-it:free"; 
+        // Alternatif jika error: "meta-llama/llama-3.1-8b-instruct:free"
+        
+        const systemMessage = { role: "system", content: `Kamu adalah karakter bernama ${ai.name}. Deskripsi/Sifatmu: ${ai.description}. Jawablah dalam bahasa Indonesia yang natural sesuai karakter.` };
+        
+        // Ambil 6 pesan terakhir saja agar hemat token dan cepat
+        const recentMessages = messages.slice(-6); 
         const payloadMessages = [systemMessage, ...recentMessages];
 
+        console.log(`Sending to OpenRouter [${MODEL_ID}]...`);
+
+        // 6. Request ke OpenRouter
         const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
-            // Ganti model ke yang lebih stabil & gratis
-            model: "mistralai/mistral-7b-instruct:free", 
-            messages: payloadMessages
+            model: MODEL_ID, 
+            messages: payloadMessages,
+            temperature: 0.7,
+            max_tokens: 500
         }, {
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://createaiandshare.vercel.app", 
-                "X-Title": "My AI App"
-            }
+                "X-Title": "My AI Share App"
+            },
+            timeout: 20000 // 20 detik timeout
         });
 
         const reply = response.data.choices[0].message.content;
+        console.log("Success reply from AI");
 
-        // Tambah respon AI ke history
+        // 7. Simpan History
         messages.push({ role: "assistant", content: reply });
-
-        // Simpan ke DB
         await database.collection("chats").updateOne(
             { aiId: aiId, sessionId: sessionId },
             { $set: { messages: messages, updatedAt: new Date() } },
@@ -158,34 +170,50 @@ app.post('/api/chat', async (req, res) => {
         res.json({ reply: reply });
 
     } catch (error) {
-        console.error("OpenRouter Error:", error.response?.data || error.message);
-        
-        // Tangkap error 401 spesifik
-        if (error.response?.data?.error?.code === 401) {
-             return res.status(500).json({ reply: "Error Sistem: API Key Expired/Invalid. Harap lapor ke CEO." });
+        // --- LOGGING ERROR DETAIL (CEK LOGS VERCEL DISINI) ---
+        console.error("=== CHAT ERROR LOG ===");
+        if (error.response) {
+            // Error dari OpenRouter (misal: 400, 401, 402, 500)
+            console.error("Status:", error.response.status);
+            console.error("Data:", JSON.stringify(error.response.data));
+            
+            if (error.response.status === 401) {
+                return res.status(500).json({ reply: "API Key Invalid/Expired. Hubungi CEO." });
+            }
+             if (error.response.status === 429) {
+                return res.status(500).json({ reply: "Rate Limit tercapai. Coba lagi nanti." });
+            }
+        } else if (error.request) {
+            // Tidak ada respon (Timeout / Network Error)
+            console.error("No Response from OpenRouter (Timeout/Network)");
+        } else {
+            // Error Codingan
+            console.error("Code Error:", error.message);
         }
+        console.error("========================");
 
-        res.status(500).json({ reply: "Maaf, AI sedang lelah (Server Error)." });
+        res.status(500).json({ reply: "Maaf, AI sedang error. Coba lagi nanti." });
     }
 });
 
-// 7. CEO / ADMIN PAGE
+// 6. CEO / ADMIN PAGE
 app.get('/ceo', async (req, res) => {
-    const database = await connectDB();
-    const keys = await database.collection("apikeys").find().toArray();
-    res.render('ceo', { keys });
+    try {
+        const database = await connectDB();
+        const keys = await database.collection("apikeys").find().toArray();
+        res.render('ceo', { keys });
+    } catch(e) { res.send("DB Error"); }
 });
 
 app.post('/ceo/add-key', async (req, res) => {
     const { key } = req.body;
     const database = await connectDB();
-    if(key && key.startsWith('sk-or-')) {
+    if(key) {
         await database.collection("apikeys").insertOne({ key, active: true });
     }
     res.redirect('/ceo');
 });
 
-// TAMBAHAN: DELETE KEY
 app.post('/ceo/delete-key', async (req, res) => {
     const { id } = req.body;
     const database = await connectDB();
@@ -197,10 +225,4 @@ app.post('/ceo/delete-key', async (req, res) => {
 
 // Server Start
 const PORT = process.env.PORT || 3000;
-if (require.main === module) {
-    app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
-}
-
 module.exports = app;
