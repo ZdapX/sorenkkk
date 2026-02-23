@@ -9,13 +9,16 @@ const app = express();
 
 // --- CONFIG ---
 const uri = "mongodb+srv://dafanation999_db_user:UXeB3cb4ow5b9Nr9@cluster0.bn6kvnj.mongodb.net/?appName=Cluster0";
-const DEFAULT_API_KEY = "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";
+
+// JANGAN PAKAI KEY LAMA YANG ERROR. 
+// Biarkan kosong dulu, nanti isi lewat menu CEO setelah deploy.
+const DEFAULT_API_KEY = ""; 
 
 // Middleware
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '../views'));
 app.use(express.static(path.join(__dirname, '../public')));
-app.use(bodyParser.json({ limit: '10mb' })); // Limit besar untuk gambar base64
+app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cors());
 
@@ -36,23 +39,18 @@ async function connectDB() {
         await client.connect();
     }
     db = client.db("ai_share_platform");
-    
-    // Inisialisasi collection API keys jika kosong
-    const keys = await db.collection("apikeys").find().toArray();
-    if (keys.length === 0) {
-        await db.collection("apikeys").insertOne({ key: DEFAULT_API_KEY, active: true });
-    }
-    
     return db;
 }
 
 // --- ROUTES ---
 
-// 1. HOME & LIBRARY
+// 1. HOME
 app.get('/', async (req, res) => {
-    const database = await connectDB();
-    const ais = await database.collection("ais").find().sort({ _id: -1 }).toArray();
-    res.render('index', { ais: ais });
+    try {
+        const database = await connectDB();
+        const ais = await database.collection("ais").find().sort({ _id: -1 }).toArray();
+        res.render('index', { ais: ais });
+    } catch (e) { res.send("Error loading DB"); }
 });
 
 // 2. CREATE AI PAGE
@@ -68,8 +66,8 @@ app.post('/api/create-ai', async (req, res) => {
         
         const newAI = {
             name,
-            image, // Base64 string
-            description, // Persona
+            image, 
+            description, 
             createdAt: new Date()
         };
         
@@ -84,62 +82,63 @@ app.post('/api/create-ai', async (req, res) => {
 app.get('/chat/:id', async (req, res) => {
     try {
         const database = await connectDB();
-        const ai = await database.collection("ais").findOne({ _id: new ObjectId(req.params.id) });
+        // Validasi ID sebelum query
+        if (!ObjectId.isValid(req.params.id)) return res.send("Invalid AI ID");
         
+        const ai = await database.collection("ais").findOne({ _id: new ObjectId(req.params.id) });
         if (!ai) return res.send("AI not found");
         
         res.render('chatai', { ai: ai });
     } catch (e) {
-        res.send("Error loading AI");
+        res.send("Error loading AI: " + e.message);
     }
 });
 
-// 5. API: GET CHAT HISTORY
-app.get('/api/chat-history/:aiId/:sessionId', async (req, res) => {
-    const database = await connectDB();
-    const history = await database.collection("chats").findOne({ 
-        aiId: req.params.aiId, 
-        sessionId: req.params.sessionId 
-    });
-    res.json(history ? history.messages : []);
-});
-
-// 6. API: SEND MESSAGE (OpenRouter)
+// 5. API: SEND MESSAGE (OpenRouter)
 app.post('/api/chat', async (req, res) => {
     const { aiId, message, sessionId } = req.body;
     
-    const database = await connectDB();
-    
-    // Ambil Data AI
-    const ai = await database.collection("ais").findOne({ _id: new ObjectId(aiId) });
-    if (!ai) return res.status(404).json({ error: "AI not found" });
-
-    // Ambil API Key (Rotasi sederhana)
-    const keys = await database.collection("apikeys").find({ active: true }).toArray();
-    const randomKeyObj = keys[Math.floor(Math.random() * keys.length)];
-    const apiKey = randomKeyObj ? randomKeyObj.key : DEFAULT_API_KEY;
-
-    // Ambil History Chat
-    let chatSession = await database.collection("chats").findOne({ aiId: aiId, sessionId: sessionId });
-    let messages = chatSession ? chatSession.messages : [];
-
-    // Tambah pesan user
-    messages.push({ role: "user", content: message });
-
     try {
-        // Construct Payload untuk OpenRouter
-        // System prompt dari deskripsi AI
+        const database = await connectDB();
+        
+        // Ambil Data AI
+        const ai = await database.collection("ais").findOne({ _id: new ObjectId(aiId) });
+        if (!ai) return res.status(404).json({ error: "AI not found" });
+
+        // AMBIL API KEY DARI DATABASE
+        const keys = await database.collection("apikeys").find({}).toArray();
+        
+        // Cek apakah ada key tersedia
+        if (keys.length === 0) {
+            return res.status(500).json({ reply: "Maaf, CEO belum memasukkan API Key yang valid." });
+        }
+
+        // Pilih random key
+        const randomKeyObj = keys[Math.floor(Math.random() * keys.length)];
+        const apiKey = randomKeyObj.key;
+
+        // Ambil History Chat
+        let chatSession = await database.collection("chats").findOne({ aiId: aiId, sessionId: sessionId });
+        let messages = chatSession ? chatSession.messages : [];
+
+        // Tambah pesan user
+        messages.push({ role: "user", content: message });
+
+        // Payload OpenRouter
         const systemMessage = { role: "system", content: ai.description };
-        const payloadMessages = [systemMessage, ...messages];
+        // Batasi history agar token tidak jebol (ambil 10 pesan terakhir)
+        const recentMessages = messages.slice(-10); 
+        const payloadMessages = [systemMessage, ...recentMessages];
 
         const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
-            model: "mistralai/mistral-7b-instruct:free", // Model gratis/murah untuk demo
+            // Ganti model ke yang lebih stabil & gratis
+            model: "mistralai/mistral-7b-instruct:free", 
             messages: payloadMessages
         }, {
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://my-ai-app.vercel.app", 
+                "HTTP-Referer": "https://createaiandshare.vercel.app", 
                 "X-Title": "My AI App"
             }
         });
@@ -160,7 +159,13 @@ app.post('/api/chat', async (req, res) => {
 
     } catch (error) {
         console.error("OpenRouter Error:", error.response?.data || error.message);
-        res.status(500).json({ error: "AI sedang sibuk atau kehabisan kuota." });
+        
+        // Tangkap error 401 spesifik
+        if (error.response?.data?.error?.code === 401) {
+             return res.status(500).json({ reply: "Error Sistem: API Key Expired/Invalid. Harap lapor ke CEO." });
+        }
+
+        res.status(500).json({ reply: "Maaf, AI sedang lelah (Server Error)." });
     }
 });
 
@@ -174,13 +179,23 @@ app.get('/ceo', async (req, res) => {
 app.post('/ceo/add-key', async (req, res) => {
     const { key } = req.body;
     const database = await connectDB();
-    if(key) {
+    if(key && key.startsWith('sk-or-')) {
         await database.collection("apikeys").insertOne({ key, active: true });
     }
     res.redirect('/ceo');
 });
 
-// Server Start (for local dev)
+// TAMBAHAN: DELETE KEY
+app.post('/ceo/delete-key', async (req, res) => {
+    const { id } = req.body;
+    const database = await connectDB();
+    if(id) {
+        await database.collection("apikeys").deleteOne({ _id: new ObjectId(id) });
+    }
+    res.redirect('/ceo');
+});
+
+// Server Start
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
     app.listen(PORT, () => {
