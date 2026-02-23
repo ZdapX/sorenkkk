@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Library & Create</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 My AI World</h1>
+            <a href="/ceo" style="font-size: 0.8rem; color: #3b82f6; text-decoration: none;">CEO Login</a>
+        </header>
+
+        <!-- Tombol Create -->
+        <div class="card" style="text-align: center;">
+            <p style="margin-bottom: 15px; color: #94a3b8;">Buat persona AI unikmu sendiri dan bagikan ke teman.</p>
+            <a href="/create" class="btn">＋ Create New AI</a>
+        </div>
+
+        <!-- Library Grid -->
+        <h3 style="margin: 20px 0 10px 0;">📚 Public Library</h3>
+        <div class="grid">
+            <% if(ais.length > 0) { %>
+                <% ais.forEach(ai => { %>
+                    <a href="/chat/<%= ai._id %>" class="ai-item">
+                        <!-- Menampilkan gambar base64 -->
+                        <img src="<%= ai.image %>" alt="<%= ai.name %>" class="ai-avatar-small">
+                        <div class="ai-name"><%= ai.name %></div>
+                    </a>
+                <% }); %>
+            <% } else { %>
+                <p style="color: #64748b; grid-column: span 2;">Belum ada AI yang dibuat.</p>
+            <% } %>
+        </div>
+    </div>
+</body>
+</html>
