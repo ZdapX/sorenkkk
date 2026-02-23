@@ -15,6 +15,9 @@
 
         <div class="card">
             <h3>Tambah API Key OpenRouter</h3>
+            <p style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 10px;">
+                Dapatkan key baru di <a href="https://openrouter.ai/keys" target="_blank" style="color: #3b82f6;">openrouter.ai</a>
+            </p>
             <form action="/ceo/add-key" method="POST" style="margin-top: 15px;">
                 <input type="text" name="key" placeholder="sk-or-v1-..." required>
                 <button type="submit" class="btn">Simpan Key</button>
@@ -22,17 +25,27 @@
         </div>
 
         <div class="card">
-            <h3>Active Keys</h3>
+            <h3>Active Keys Database</h3>
             <% if(keys.length > 0) { %>
                 <ul style="list-style: none; padding: 0;">
                     <% keys.forEach((k, index) => { %>
-                        <li style="padding: 10px; border-bottom: 1px solid #334155; color: #94a3b8; font-family: monospace;">
-                            Key #<%= index + 1 %>: <%= k.key.substring(0, 10) %>...
+                        <li style="padding: 10px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #94a3b8; font-family: monospace;">
+                                Key #<%= index + 1 %>: <%= k.key.substring(0, 15) %>...
+                            </span>
+                            
+                            <!-- Tombol Hapus Key -->
+                            <form action="/ceo/delete-key" method="POST" style="margin:0;">
+                                <input type="hidden" name="id" value="<%= k._id %>">
+                                <button type="submit" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">
+                                    Hapus 🗑️
+                                </button>
+                            </form>
                         </li>
                     <% }); %>
                 </ul>
             <% } else { %>
-                <p>Belum ada key tersimpan.</p>
+                <p style="color: #ef4444;">⚠️ Belum ada API Key! Chat tidak akan berfungsi.</p>
             <% } %>
         </div>
     </div>
