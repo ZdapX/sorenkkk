@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create New AI</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <a href="/" style="color: white; text-decoration: none;">← Back</a>
+            <h1>Create AI</h1>
+        </header>
+
+        <div class="card">
+            <!-- STEP 1: NAMA -->
+            <div id="step-1">
+                <label>Nama AI:</label>
+                <input type="text" id="aiName" placeholder="Contoh: Pacar Virtual, Asisten Coding..." required>
+                <button class="btn" onclick="nextStep(1)">Next ➔</button>
+            </div>
+
+            <!-- STEP 2: FOTO -->
+            <div id="step-2" class="hidden">
+                <label>Foto Profil (Pilih dari HP):</label>
+                <input type="file" id="aiImageInput" accept="image/*">
+                <div style="text-align: center; margin: 10px 0;">
+                    <img id="previewImg" src="" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; background: #000; display: none;">
+                </div>
+                <button class="btn" onclick="nextStep(2)">Next ➔</button>
+            </div>
+
+            <!-- STEP 3: DESKRIPSI -->
+            <div id="step-3" class="hidden">
+                <label>Deskripsi / Persona AI:</label>
+                <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 5px;">Jelaskan sifatnya. Contoh: "Kamu adalah anime girl tsundere yang suka marah tapi peduli."</p>
+                <textarea id="aiDesc" rows="5" placeholder="Masukkan instruksi persona di sini..."></textarea>
+                <button class="btn" onclick="createAI()">Create AI ✨</button>
+            </div>
+
+            <!-- STEP 4: LOADING -->
+            <div id="step-loading" class="hidden" style="text-align: center;">
+                <div class="loading-spinner"></div>
+                <p>Sedang merakit otak AI...</p>
+            </div>
+
+            <!-- STEP 5: SUCCESS & SHARE -->
+            <div id="step-success" class="hidden" style="text-align: center;">
+                <h2 style="color: #4ade80; margin-bottom: 10px;">Berhasil! 🎉</h2>
+                <p id="successMsg" style="margin-bottom: 20px;"></p>
+                
+                <input type="text" id="shareLink" readonly onclick="this.select()" style="text-align: center; font-size: 0.9rem;">
+                
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-secondary" onclick="copyLink()">Salin Link</button>
+                    <a id="startChatBtn" href="#" class="btn">Mulai Chat ➔</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let aiData = { name: "", image: "", description: "" };
+
+        // Handle Image Preview & Base64
+        document.getElementById('aiImageInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onloadend = function() {
+                    aiData.image = reader.result; // Simpan base64
+                    const img = document.getElementById('previewImg');
+                    img.src = reader.result;
+                    img.style.display = 'inline-block';
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function nextStep(current) {
+            if (current === 1) {
+                aiData.name = document.getElementById('aiName').value;
+                if (!aiData.name) return alert("Isi nama dulu bos!");
+                document.getElementById('step-1').classList.add('hidden');
+                document.getElementById('step-2').classList.remove('hidden');
+            } else if (current === 2) {
+                if (!aiData.image) return alert("Pilih foto dulu!");
+                document.getElementById('step-2').classList.add('hidden');
+                document.getElementById('step-3').classList.remove('hidden');
+            }
+        }
+
+        async function createAI() {
+            aiData.description = document.getElementById('aiDesc').value;
+            if (!aiData.description) return alert("Deskripsi wajib diisi!");
+
+            // Show Loading
+            document.getElementById('step-3').classList.add('hidden');
+            document.getElementById('step-loading').classList.remove('hidden');
+
+            try {
+                const res = await fetch('/api/create-ai', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(aiData)
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    document.getElementById('step-loading').classList.add('hidden');
+                    document.getElementById('step-success').classList.remove('hidden');
+
+                    document.getElementById('successMsg').innerText = `${aiData.name} telah selesai dibuat!`;
+                    
+                    const link = `${window.location.origin}/chat/${result.id}`;
+                    document.getElementById('shareLink').value = link;
+                    document.getElementById('startChatBtn').href = `/chat/${result.id}`;
+                } else {
+                    alert("Gagal membuat AI: " + result.error);
+                    location.reload();
+                }
+            } catch (err) {
+                alert("Error koneksi");
+            }
+        }
+
+        function copyLink() {
+            const copyText = document.getElementById("shareLink");
+            copyText.select();
+            document.execCommand("copy");
+            alert("Link tersalin!");
+        }
+    </script>
+</body>
+</html>
